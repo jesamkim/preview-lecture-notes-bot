@@ -121,15 +121,8 @@ def create_enhanced_markdown(init_md_path, temp_dir, bedrock_client):
     
     return enhanced_path
 
-def create_final_markdown(enhanced_md_path, bedrock_client, max_retries=3, retry_count=0):
-    """최종 마크다운 파일 생성"""
-    pdf_name = enhanced_md_path.stem.replace('-2-enhanced', '')
-    final_path = pathlib.Path(f"{pdf_name}-3-completed.md")
-    
-    # 향상된 마크다운 내용 읽기
-    content = enhanced_md_path.read_text(encoding='utf-8')
-    
-    # Bedrock을 사용하여 최종 내용 생성
+def process_chunk(chunk, bedrock_client, instruction, max_retries=3, retry_count=0):
+    """청크를 처리하고 결과를 반환"""
     try:
         body = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -141,35 +134,11 @@ def create_final_markdown(enhanced_md_path, bedrock_client, max_retries=3, retry
                         {
                             "type": "text",
                             "text": f"""
-인공지능 대학원 강의 자료를 사전 지식이 없는 상태에서 예습에 활용할 수 있도록 다음 지시사항에 맞게 개선해주세요.
-
-<instruction>
-1. 문서 구조화:
-   - 주제별로 명확한 섹션 구분
-   - 핵심 개념을 bullet point로 정리
-   - 수식이 나올 때마다 직관적인 설명 추가
-
-2. 이미지 통합:
-   - 각 이미지 설명을 해당 섹션의 내용과 자연스럽게 통합
-   - 이미지가 설명하는 개념과 텍스트 내용을 연결
-   - 이미지의 세부 요소들이 전체 맥락에서 어떤 의미를 갖는지 이해하기 쉽게 설명
-
-3. 개념 설명:
-   - 전문 용어에 대한 설명을 이해하기 쉽게 포함
-   - 각 전문 용어(term)에 대해 구체적인 예시 포함
-   - 복잡한 개념은 이해하기 쉽게 단계별로 설명
-   - 실제 응용 사례나 직관적인 쉬운 비유 추가
-
-4. 중요: 
-   - 수식은 수학적 의미뿐만 아니라 실제 적용 관점에서도 설명
-   - 이전 개념과 새로운 개념의 연결성 강조
-   
-5. 내용은 이해하기 쉽게 하는 것이 목적이므로 충분히 풍부하게 작성합니다.
-</instruction>
+{instruction}
 
 노트 내용:
 <content>
-{content}
+{chunk}
 </content>
 """
                         }
@@ -184,20 +153,88 @@ def create_final_markdown(enhanced_md_path, bedrock_client, max_retries=3, retry
         )
         
         response_body = json.loads(response['body'].read().decode())
-        final_content = response_body['content'][0]['text']
-        
-        # 최종 마크다운 파일 생성
-        final_path.write_text(final_content, encoding='utf-8')
-        return final_path
+        return response_body['content'][0]['text']
     
     except Exception as e:
         if "ThrottlingException" in str(e) and retry_count < max_retries:
             print(f"Throttling error occurred. Retrying in 3 seconds... (Attempt {retry_count + 1}/{max_retries})")
             time.sleep(3)
-            return create_final_markdown(enhanced_md_path, bedrock_client, max_retries, retry_count + 1)
+            return process_chunk(chunk, bedrock_client, instruction, max_retries, retry_count + 1)
         else:
-            print(f"Error creating final markdown: {str(e)}")
+            print(f"Error processing chunk: {str(e)}")
             return None
+
+def create_final_markdown(enhanced_md_path, bedrock_client, max_retries=3):
+    """최종 마크다운 파일 생성"""
+    pdf_name = enhanced_md_path.stem.replace('-2-enhanced', '')
+    final_path = pathlib.Path(f"{pdf_name}-3-completed.md")
+    
+    # 향상된 마크다운 내용 읽기
+    content = enhanced_md_path.read_text(encoding='utf-8')
+    lines = content.split('\n')
+    
+    # 청크 생성
+    chunk_size = 500  # 청크 크기를 500줄로 줄임
+    chunks = ['\n'.join(lines[i:i+chunk_size]) for i in range(0, len(lines), chunk_size)]
+    
+    # 처리 지침
+    instruction = """
+인공지능 대학원 강의 자료를 사전 지식이 없는 상태에서 예습에 활용할 수 있도록 다음 지시사항에 맞게 개선해주세요.
+
+<instruction>
+1. 문서 구조화:
+   - 주제별로 명확한 섹션 구분
+   - 핵심 개념을 bullet point로 정리
+   - 수식이 나올 때마다 직관적인 설명 추가
+
+2. 이미지 통합:
+   - 각 이미지 설명을 해당 섹션의 내용과 자연스럽게 통합
+   - 이미지가 설명하는 개념과 텍스트 내용을 연결
+   - 이미지의 세부 요소들이 전체 맥락에서 어떤 의미를 갖는지 이해하기 쉽게 설명
+   - 원본 이미지 파일에 대한 참조 유지 (예: ![이미지 설명](temp/image_file_name.png))
+
+3. 개념 설명:
+   - 전문 용어에 대한 설명을 이해하기 쉽게 포함
+   - 각 전문 용어(term)에 대해 구체적인 예시 포함
+   - 복잡한 개념은 이해하기 쉽게 단계별로 설명
+   - 실제 응용 사례나 직관적인 쉬운 비유 추가
+
+4. 중요: 
+   - 수식은 수학적 의미뿐만 아니라 실제 적용 관점에서도 설명
+   - 이전 개념과 새로운 개념의 연결성 강조
+   
+5. 내용은 이해하기 쉽게 하는 것이 목적이므로 충분히 풍부하게 작성합니다.
+
+6. 문서의 일관성:
+   - 각 섹션이 자연스럽게 연결되도록 작성
+   - 문서 전체가 완성된 형태가 되도록 구성
+
+7. 결론:
+   - 주요 개념을 요약하고 향후 학습 방향 제시
+</instruction>
+"""
+    
+    # 각 청크 처리
+    processed_chunks = []
+    total_chunks = len(chunks)
+    for i, chunk in enumerate(chunks):
+        print(f"Processing chunk {i+1} of {total_chunks} ({(i+1)/total_chunks*100:.2f}% complete)...")
+        processed_chunk = process_chunk(chunk, bedrock_client, instruction, max_retries)
+        if processed_chunk:
+            processed_chunks.append(processed_chunk)
+        else:
+            print(f"Failed to process chunk {i+1}")
+        
+        # API 호출 빈도 조절을 위한 대기 시간 추가
+        if i < total_chunks - 1:  # 마지막 청크가 아닌 경우에만 대기
+            time.sleep(5)
+    
+    # 처리된 청크 결합
+    final_content = '\n\n'.join(processed_chunks)
+    
+    # 최종 마크다운 파일 생성
+    final_path.write_text(final_content, encoding='utf-8')
+    return final_path
 
 def main():
     if len(sys.argv) != 2:
