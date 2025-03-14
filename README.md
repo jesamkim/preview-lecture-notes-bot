@@ -73,6 +73,11 @@ pip install -r requirements.txt
 python main.py your_lecture.pdf
 ```
 
+#### Screen Capture
+![](./img/screen_capture_1.png)
+![](./img/screen_capture_2.png)
+![](./img/screen_capture_3.png)
+
 ### 생성되는 파일과 디렉토리
 1. `temp/` 디렉토리
    - PDF에서 추출된 이미지 파일들이 임시 저장되는 위치
