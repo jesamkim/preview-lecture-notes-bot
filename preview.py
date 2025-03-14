@@ -42,7 +42,7 @@ def analyze_image_with_bedrock(bedrock_client, image_path, max_retries=3, retry_
         
         body = {
             "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 1000,
+            "max_tokens": 1500,
             "messages": [
                 {
                     "role": "user",
@@ -57,7 +57,7 @@ def analyze_image_with_bedrock(bedrock_client, image_path, max_retries=3, retry_
                         },
                         {
                             "type": "text",
-                            "text": "이 이미지를 5문장 이내로 설명해주세요. 학술적인 내용이 포함된 경우 전문적으로 설명해주세요."
+                            "text": "이 이미지를 5문장 이내로 설명해주세요. 학술적인 내용이 포함된 경우 전문적이면서 이해하기 쉽게 설명해주세요."
                         }
                     ]
                 }
@@ -89,17 +89,34 @@ def create_enhanced_markdown(init_md_path, temp_dir, bedrock_client):
     # 초기 마크다운 내용 읽기
     content = init_md_path.read_text(encoding='utf-8')
     
-    # 이미지 분석 및 설명 추가
-    image_descriptions = []
-    for image_path in sorted(temp_dir.glob(f"{pdf_name}*.png")):
-        print(f"Analyzing image: {image_path.name}")
-        description = analyze_image_with_bedrock(bedrock_client, image_path, max_retries=3)
-        if description:
-            image_descriptions.append(f"\n### Image Analysis: {image_path.name}\n{description}\n")
-        time.sleep(5)  # API 쓰로틀링 방지 (2초 -> 5초로 증가)
+    # 이미지 분석 및 설명을 이미지 바로 아래에 추가
+    lines = content.split('\n')
+    new_lines = []
+    analyzed_images = set()  # 이미 분석한 이미지 추적
+    
+    for line in lines:
+        if '![' in line and '](' in line:  # 이미지 라인 발견
+            image_name = line.split('(')[-1].split(')')[0]  # 이미지 파일명 추출
+            # temp 디렉토리 경로를 포함하여 이미지 라인 추가
+            new_lines.append(f'![](temp/{image_name})')
+            
+            # 이미지 분석 및 설명 추가
+            if image_name not in analyzed_images:  # 아직 분석하지 않은 이미지만 처리
+                image_path = temp_dir / pathlib.Path(image_name).name
+                print(f"Analyzing image: {image_path.name}")
+                description = analyze_image_with_bedrock(bedrock_client, image_path, max_retries=3)
+                if description:
+                    new_lines.append(f"\n> **이미지 설명:**")
+                    for desc_line in description.split('\n'):
+                        new_lines.append(f"> {desc_line}")
+                    new_lines.append("")  # 빈 줄 추가
+                analyzed_images.add(image_name)  # 분석 완료된 이미지 추적
+                time.sleep(8)  # API 쓰로틀링 방지 (더 긴 대기 시간)
+        else:  # 일반 텍스트 라인은 그대로 추가
+            new_lines.append(line)
     
     # 향상된 마크다운 파일 생성
-    enhanced_content = content + "\n\n## Image Analyses\n" + "\n".join(image_descriptions)
+    enhanced_content = '\n'.join(new_lines)
     enhanced_path.write_text(enhanced_content, encoding='utf-8')
     
     return enhanced_path
@@ -138,6 +155,7 @@ def create_final_markdown(enhanced_md_path, bedrock_client, max_retries=3, retry
    - 이미지의 세부 요소들이 전체 맥락에서 어떤 의미를 갖는지 이해하기 쉽게 설명
 
 3. 개념 설명:
+   - 전문 용어에 대한 설명을 이해하기 쉽게 포함
    - 각 전문 용어(term)에 대해 구체적인 예시 포함
    - 복잡한 개념은 이해하기 쉽게 단계별로 설명
    - 실제 응용 사례나 직관적인 쉬운 비유 추가
