@@ -41,9 +41,9 @@ aws configure
 
 #### Amazon Bedrock 설정
 1. AWS Console에서 Bedrock 서비스 접근 권한 확인
-2. Claude 3.5 Sonnet v2 모델 사용 권한 확인
-   - Model ID: us.anthropic.claude-3-5-sonnet-20241022-v2:0
-   - 모델 버전: Claude 3.5 Sonnet v2 (2024년 10월 22일 버전)
+2. Claude 3.7 Sonnet v1 모델 사용 권한 확인
+   - Model ID: us.anthropic.claude-3-7-sonnet-20250219-v1:0
+   - 모델 버전: Claude 3.7 Sonnet v1 (2025년 2월 19일 버전)
    - API 사용량 및 제한 확인 (Quota)
 
 ## 설치 방법
